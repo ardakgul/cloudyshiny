@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CloudyShiny Index Dashboard</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #ffffff;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+        }
+        .meter-container {
+            text-align: center;
+            margin: 40px 0;
+        }
+        meter {
+            width: 100%;
+            height: 30px;
+        }
+        .box {
+            border: 1px solid #444;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            background-color: #1e1e1e;
+        }
+        .disclaimer {
+            font-size: 0.9em;
+            color: #aaa;
+            margin-top: 40px;
+        }
+        .update-time {
+            text-align: center;
+            margin-bottom: 10px;
+            font-style: italic;
+            color: #bbb;
+        }
+        #chart-options button {
+            margin-right: 5px;
+            padding: 5px 10px;
+            border: none;
+            background-color: #444;
+            color: #e0e0e0;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        #chart-options button:hover {
+            background-color: #666;
+        }
+    </style>
+    <!-- Include Chart.js from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>CloudyShiny Index Dashboard</h1>
+        
+        <!-- Last update time -->
+        <div id="last-update" class="update-time">(updated --)</div>
+        
+        <!-- Score Meter -->
+        <div class="meter-container">
+            <meter id="score-meter" min="0" max="100" value="0"></meter>
+            <div id="sentiment-text" style="margin-top: 10px; font-size: 1.2em;"></div>
+        </div>
+        
+        <!-- Market Status Box -->
+        <div class="box" id="market-status-box">
+            <h2>Market Status</h2>
+        </div>
+        
+        <!-- Score Contributions Box -->
+        <div class="box" id="score-contributions-box">
+            <h2>Score Contributions</h2>
+        </div>
+        
+        <!-- Historical Data Graph -->
+        <div class="box" id="historical-chart-box">
+            <h2>Historical Data</h2>
+            <canvas id="historical-chart"></canvas>
+            <div id="chart-options" style="margin-top: 10px;">
+                <button onclick="updateChart('1w')">1 Week</button>
+                <button onclick="updateChart('1m')">1 Month</button>
+                <button onclick="updateChart('3m')">3 Months</button>
+                <button onclick="updateChart('6m')">6 Months</button>
+                <button onclick="updateChart('1y')">1 Year</button>
+            </div>
+        </div>
+        
+        <!-- Data Upload & Automation Instructions -->
+        <div class="box">
+            <h2>Data Upload & Automation</h2>
+            <p>Run your data-fetching script on your computer and have it update the JSON file automatically (for example, via GitHub Actions or another CI/CD pipeline).</p>
+            <p>If you use GitHub Pages, note that the site is static so you might use a serverless function or backend service to update the data dynamically.</p>
+        </div>
+        
+        <!-- Disclaimer -->
+        <div class="disclaimer">
+            <p>Disclaimer: This website cannot be used for financial advice.</p>
+        </div>
+    </div>
+    
+    <script>
+        let indexScore = 0;
+        let historicalChart;
+        let historicalData = {}; // Will be filled from the JSON file
+        const defaultRange = '1w';
+        
+        function updateSentiment(score) {
+            let sentiment;
+            if (score <= 30) {
+                sentiment = "Cloudy";
+            } else if (score <= 49) {
+                sentiment = "Partially cloudy";
+            } else if (score === 50) {
+                sentiment = "Neutral";
+            } else if (score <= 70) {
+                sentiment = "Partially sunny";
+            } else {
+                sentiment = "Sunny";
+            }
+            document.getElementById("sentiment-text").innerText = "Market Sentiment: " + sentiment;
+        }
+        
+        function updateLastUpdate(timestamp) {
+            const date = new Date(timestamp);
+            document.getElementById("last-update").innerText = `(Updated: ${date.toLocaleString()})`;
+        }
+        
+        function updateContributions(contributions) {
+            const container = document.getElementById("score-contributions-box");
+            container.innerHTML = "<h2>Score Contributions</h2>";
+            for (const [name, info] of Object.entries(contributions)) {
+                const p = document.createElement("p");
+                p.innerText = `${name}: ${info.score.toFixed(2)}`;
+                container.appendChild(p);
+            }
+        }
+        
+        function updateMarketStatus() {
+            const marketStatusData = [
+                { asset: "S&P500", status: "above" },
+                { asset: "Shanghai", status: "above" },
+                { asset: "Nikkei", status: "below" },
+                { asset: "Hang Seng", status: "above" },
+                { asset: "DAX", status: "below" },
+                { asset: "CAC40", status: "below" },
+                { asset: "BIST100", status: "above" },
+                { asset: "US 10Y Bonds", status: "above" },
+                { asset: "VIX", status: "below" },
+                { asset: "RSS News", status: "above" },
+                { asset: "BTC", status: "above" },
+                { asset: "Oil & Gold Daily", status: "above" },
+                { asset: "Gold MA", status: "below" },
+                { asset: "Economics News", status: "above" }
+            ];
+            const statusBox = document.getElementById("market-status-box");
+            statusBox.innerHTML = "<h2>Market Status</h2>";
+            marketStatusData.forEach(item => {
+                const p = document.createElement("p");
+                p.innerHTML = `${item.asset} is <strong>${item.status}</strong> the 125-day moving average.`;
+                statusBox.appendChild(p);
+            });
+        }
+        
+        // Chart.js graph functions
+        function initChart() {
+            const ctx = document.getElementById('historical-chart').getContext('2d');
+            const defaultLabels = historicalData[defaultRange] ? historicalData[defaultRange].labels : [];
+            const defaultData = historicalData[defaultRange] ? historicalData[defaultRange].data : [];
+            historicalChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: defaultLabels,
+                    datasets: [{
+                        label: 'Index Score',
+                        data: defaultData,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { display: true },
+                        y: { display: true, beginAtZero: true, max: 100 }
+                    }
+                }
+            });
+        }
+        
+        function updateChart(range) {
+            if (historicalData[range]) {
+                historicalChart.data.labels = historicalData[range].labels;
+                historicalChart.data.datasets[0].data = historicalData[range].data;
+                historicalChart.update();
+            }
+        }
+        
+        async function fetchData() {
+            try {
+                const response = await fetch('data/data.json');
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                indexScore = data.index_score;
+                updateLastUpdate(data.last_update);
+                updateSentiment(indexScore);
+                document.getElementById("score-meter").value = indexScore;
+                updateContributions(data.contributions);
+                historicalData = data.historical || {};
+                updateMarketStatus();
+                if (historicalChart) {
+                    updateChart(defaultRange);
+                } else {
+                    initChart();
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+        
+        document.addEventListener("DOMContentLoaded", function() {
+            fetchData();
+            setInterval(fetchData, 300000);
+        });
+    </script>
+</body>
+</html>
